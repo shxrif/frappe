@@ -237,11 +237,11 @@ class DatabaseQuery:
 			self.save_user_settings_fields = save_user_settings_fields
 			self.update_user_settings()
 
-		if pluck:
-			return [d[pluck] for d in result]
-
 		if self.doctype and result:
 			result = self.mask_fields(result)
+
+		if pluck:
+			return [d[pluck] for d in result]
 
 		return result
 

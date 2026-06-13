@@ -1542,3 +1542,80 @@ class TestMariaDBExceptionUtil(IntegrationTestCase):
 		self.assertFalse(MariaDBExceptionUtil.is_statement_timeout(e))
 		self.assertFalse(MariaDBExceptionUtil.is_data_too_long(e))
 		self.assertFalse(MariaDBExceptionUtil.is_db_table_size_limit(e))
+
+
+class TestPluckMasking(IntegrationTestCase):
+	def setUp(self):
+		super().setUp()
+		self.doctype_name = "Test Mask Pluck Doctype"
+		self.role_name = "Test Mask Pluck Role"
+		self.user_name = "test-mask-pluck@example.com"
+
+		# Create Role
+		if not frappe.db.exists("Role", self.role_name):
+			frappe.get_doc({"doctype": "Role", "role_name": self.role_name}).insert()
+
+		# Create Custom DocType
+		if frappe.db.exists("DocType", self.doctype_name):
+			frappe.delete_doc("DocType", self.doctype_name, force=True)
+
+		frappe.get_doc({
+			"doctype": "DocType",
+			"name": self.doctype_name,
+			"module": "Core",
+			"custom": 1,
+			"naming_rule": "Expression",
+			"autoname": "format:TMPD-{#####}",
+			"fields": [
+				{"fieldname": "title", "label": "Title", "fieldtype": "Data"},
+				{"fieldname": "secret", "label": "Secret", "fieldtype": "Data", "mask": 1, "permlevel": 1},
+			],
+			"permissions": [
+				{"role": self.role_name, "read": 1, "permlevel": 0},
+			],
+		}).insert()
+
+		# Create User
+		if not frappe.db.exists("User", self.user_name):
+			self.user = frappe.get_doc({
+				"doctype": "User",
+				"email": self.user_name,
+				"first_name": "Test Mask Pluck",
+				"send_welcome_email": 0,
+			}).insert()
+		else:
+			self.user = frappe.get_doc("User", self.user_name)
+		self.user.add_roles(self.role_name)
+
+		# Insert Documents
+		self.doc1 = frappe.get_doc({"doctype": self.doctype_name, "title": "hello", "secret": "topsecret1"}).insert()
+		self.doc2 = frappe.get_doc({"doctype": self.doctype_name, "title": "hello", "secret": "topsecret2"}).insert()
+		frappe.db.commit()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		if frappe.db.exists("DocType", self.doctype_name):
+			frappe.delete_doc("DocType", self.doctype_name, force=True)
+		if frappe.db.exists("User", self.user_name):
+			frappe.delete_doc("User", self.user_name, force=True)
+		if frappe.db.exists("Role", self.role_name):
+			frappe.delete_doc("Role", self.role_name, force=True)
+		super().tearDown()
+
+	def test_pluck_masking(self):
+		# As Administrator, get_values should not mask
+		frappe.set_user("Administrator")
+		admin_pluck = frappe.db.get_values(self.doctype_name, {"title": "hello"}, pluck="name")
+		self.assertEqual(set(admin_pluck), {self.doc1.name, self.doc2.name})
+
+		# As non-admin user without mask access
+		frappe.set_user(self.user_name)
+
+		# Test get_values pluck (should not corrupt strings)
+		user_pluck = frappe.db.get_values(self.doctype_name, {"title": "hello"}, pluck="name")
+		self.assertEqual(set(user_pluck), {self.doc1.name, self.doc2.name})
+
+		# Test get_all pluck (should mask secret field)
+		user_get_all = frappe.get_all(self.doctype_name, {"title": "hello"}, pluck="secret")
+		self.assertEqual(user_get_all, ["XXXXXXXX", "XXXXXXXX"])
+

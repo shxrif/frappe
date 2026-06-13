@@ -82,16 +82,18 @@ def Table(*args, **kwargs):
 def mask_fields(
 	doctype: str,
 	fields: list[Any],
-	result: list[dict] | list[tuple],
+	result: list[dict] | list[tuple] | list[Any],
 	as_dict: bool = True,
-) -> list[dict] | list[tuple]:
+	pluck: bool | str | None = None,
+) -> list[dict] | list[tuple] | list[Any]:
 	"""Mask fields in the result based on the doctype's masked fields.
 
 	Args:
 		doctype: Name of the DocType being queried
 		fields: List of field objects from the query
-		result: Query results as list of dicts or tuples
+		result: Query results as list of dicts, tuples, or scalar values
 		as_dict: Whether results are dictionaries (True) or tuples (False)
+		pluck: Whether the results are plucked (scalar list)
 
 	Returns:
 		Result with masked field values applied based on user permissions
@@ -106,6 +108,25 @@ def mask_fields(
 	masked_fields = frappe.get_meta(doctype).get_masked_fields()
 
 	if not masked_fields:
+		return result
+
+	if pluck:
+		plucked_field = None
+		if isinstance(pluck, str):
+			plucked_field = pluck
+		elif fields:
+			first_field = fields[0]
+			plucked_field = getattr(first_field, "alias", None) or getattr(first_field, "name", None)
+
+		if plucked_field:
+			matching_field = None
+			for f in masked_fields:
+				if f.fieldname == plucked_field:
+					matching_field = f
+					break
+			if matching_field:
+				from frappe.model.utils.mask import mask_field_value
+				return [mask_field_value(matching_field, val) for val in result]
 		return result
 
 	if not as_dict:
@@ -135,7 +156,7 @@ def execute_query(query, *args, **kwargs):
 
 	if result and dt and fields:
 		as_dict = kwargs.get("as_dict", not kwargs.get("as_list", False))
-		result = mask_fields(dt, fields, result, as_dict=as_dict)
+		result = mask_fields(dt, fields, result, as_dict=as_dict, pluck=kwargs.get("pluck"))
 
 	return result
 
