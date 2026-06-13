@@ -237,11 +237,18 @@ class DatabaseQuery:
 			self.save_user_settings_fields = save_user_settings_fields
 			self.update_user_settings()
 
+		if pluck:
+			# Optimize: Only mask if the plucked field itself is masked
+			masked_fields = self.get_masked_fields()
+			plucked_masked_field = next((f for f in masked_fields if f.fieldname == pluck), None)
+
+			if plucked_masked_field:
+				from frappe.model.utils.mask import mask_field_value
+				return [mask_field_value(plucked_masked_field, d[pluck]) for d in result]
+			return [d[pluck] for d in result]
+
 		if self.doctype and result:
 			result = self.mask_fields(result)
-
-		if pluck:
-			return [d[pluck] for d in result]
 
 		return result
 

@@ -1603,19 +1603,21 @@ class TestPluckMasking(IntegrationTestCase):
 		super().tearDown()
 
 	def test_pluck_masking(self):
+		filters = {"name": ["in", [self.doc1.name, self.doc2.name]]}
+
 		# As Administrator, get_values should not mask
 		frappe.set_user("Administrator")
-		admin_pluck = frappe.db.get_values(self.doctype_name, {"title": "hello"}, pluck="name")
+		admin_pluck = frappe.db.get_values(self.doctype_name, filters, pluck="name")
 		self.assertEqual(set(admin_pluck), {self.doc1.name, self.doc2.name})
 
 		# As non-admin user without mask access
 		frappe.set_user(self.user_name)
 
 		# Test get_values pluck (should not corrupt strings)
-		user_pluck = frappe.db.get_values(self.doctype_name, {"title": "hello"}, pluck="name")
+		user_pluck = frappe.db.get_values(self.doctype_name, filters, pluck="name")
 		self.assertEqual(set(user_pluck), {self.doc1.name, self.doc2.name})
 
 		# Test get_all pluck (should mask secret field)
-		user_get_all = frappe.get_all(self.doctype_name, {"title": "hello"}, pluck="secret")
+		user_get_all = frappe.get_all(self.doctype_name, filters, pluck="secret")
 		self.assertEqual(user_get_all, ["XXXXXXXX", "XXXXXXXX"])
 
